@@ -54,7 +54,7 @@ const VARIANT_META: Record<string, {
 };
 
 function htmlVariantPlugin(): Plugin {
-  const variant = process.env.VITE_VARIANT || 'world';
+  const variant = process.env.VITE_VARIANT || 'tech';
   const meta = VARIANT_META[variant] || VARIANT_META.world;
 
   return {

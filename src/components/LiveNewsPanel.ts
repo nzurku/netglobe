@@ -48,7 +48,7 @@ interface LiveChannel {
   useFallbackOnly?: boolean; // Skip auto-detection, always use fallback
 }
 
-const SITE_VARIANT = import.meta.env.VITE_VARIANT || 'full';
+const SITE_VARIANT = import.meta.env.VITE_VARIANT || 'tech';
 
 // Full variant: World news channels (24/7 live streams)
 const FULL_LIVE_CHANNELS: LiveChannel[] = [
@@ -64,9 +64,9 @@ const FULL_LIVE_CHANNELS: LiveChannel[] = [
 
 // Tech variant: Tech & business channels
 const TECH_LIVE_CHANNELS: LiveChannel[] = [
+  { id: 'cnbc', name: 'CNBC', handle: '@CNBC', fallbackVideoId: '9NyxcX3rhQs' },
   { id: 'bloomberg', name: 'Bloomberg', handle: '@Bloomberg', fallbackVideoId: 'iEpJwprxDdk' },
   { id: 'yahoo', name: 'Yahoo Finance', handle: '@YahooFinance', fallbackVideoId: 'KQp-e_XQnDE' },
-  { id: 'cnbc', name: 'CNBC', handle: '@CNBC', fallbackVideoId: '9NyxcX3rhQs' },
   { id: 'nasa', name: 'NASA TV', handle: '@NASA', fallbackVideoId: 'fO9e9jnhYK8', useFallbackOnly: true },
 ];
 

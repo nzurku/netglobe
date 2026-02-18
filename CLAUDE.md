@@ -1,171 +1,139 @@
-# WorldMonitor Development Notes
+# CLAUDE.md
 
-## 🤖 Model Preferences (Jan 30, 2026)
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**For ALL coding tasks in WorldMonitor, ALWAYS use:**
+## Commands
 
-| Task | Model | Alias |
-|------|-------|-------|
-| **Coding** | `openrouter/anthropic/claude-sonnet-4-5` | `sonnet` |
-| **Coding** | `openai/gpt-5-2` | `codex` |
-
-**Never default to MiniMax for coding tasks.**
-
-**How to run with preferred model:**
 ```bash
-# Sonnet for coding
-clawdbot --model openrouter/anthropic/claude-sonnet-4-5 "build me..."
+# Development (frontend only — API panels won't load)
+npm run dev              # Full variant (geopolitical)
+npm run dev:tech         # Tech variant (startups)
 
-# Codex for coding  
-clawdbot --model openai/gpt-5-2 "build me..."
+# Development (frontend + all 45+ edge functions)
+vercel dev               # Requires: npm i -g vercel
+
+# Type checking
+npm run typecheck        # tsc --noEmit
+
+# Production builds
+npm run build:full       # worldmonitor.app
+npm run build:tech       # startups.worldmonitor.app
+
+# E2E tests (Playwright, requires Chromium)
+npm run test:e2e                    # Full suite (runtime + full + tech)
+npm run test:e2e:full               # Full variant only
+npm run test:e2e:tech               # Tech variant only
+npm run test:e2e:runtime            # Runtime fetch patch test only
+npm run test:e2e:visual             # Golden screenshot comparisons
+npm run test:e2e:visual:update      # Update golden screenshots
+
+# Run a single e2e test by grep pattern
+VITE_VARIANT=full npx playwright test -g "test name pattern"
+
+# Unit tests (Node.js test runner)
+npm run test:sidecar     # Sidecar + CORS + YouTube embed tests
+
+# Desktop app (Tauri)
+npm run desktop:dev                          # Dev mode
+npm run desktop:build:full                   # Production build
+npm run desktop:package:macos:full           # Package .app + .dmg
+npm run desktop:package:macos:full:sign      # Signed package
 ```
 
-**Set as default:**
-```bash
-export CLAUDE_MODEL=openrouter/anthropic/claude-sonnet-4-5
-```
+## Architecture
+
+**Stack**: TypeScript, Vite, MapLibre GL + deck.gl (WebGL), Vercel Edge Functions, Upstash Redis, Tauri (desktop)
+
+**No framework** — vanilla TypeScript with imperative DOM manipulation. No React/Vue/Svelte.
+
+### Entry Point & Initialization
+- `src/main.ts` → initializes analytics, meta tags, desktop runtime fetch patch → creates `App`
+- `src/App.ts` → main orchestrator class. Manages map, panels, news aggregation, all data fetching, signal detection, geo-convergence. Imports 70+ components/services.
+
+### Variant System
+Two site variants from one codebase, controlled by `VITE_VARIANT` env var:
+- `full` (default): Geopolitical focus — conflicts, military tracking, CII, intel feeds
+- `tech`: Tech/startup focus — AI labs, accelerators, VC insights, GitHub trending
+
+Variant configs live in `src/config/variants/{base,full,tech}.ts`. Panel definitions in `src/config/panels.ts` differ by variant.
+
+### Key Directories
+
+| Directory | Purpose |
+|-----------|---------|
+| `src/components/` | UI panels (NewsPanel, CIIPanel, MapContainer, etc.) — each is a `.ts` file |
+| `src/services/` | Data fetching, analysis, signal processing (country-instability, clustering, flights, ais, etc.) |
+| `src/config/` | Static data (feeds, military bases, pipelines, countries, geo hubs) and variant configs |
+| `api/` | 45+ Vercel Edge Functions — RSS proxy, AI pipeline, data adapters, market analytics |
+| `api/_*.js` | Shared edge function utilities (CORS, caching, rate limiting) — prefixed with underscore |
+| `e2e/` | Playwright tests with golden screenshot snapshots per variant |
+| `src-tauri/` | Rust Tauri backend + Node.js sidecar for desktop app |
+| `scripts/` | AIS relay server, desktop packaging |
+
+### Data Flow
+1. RSS feeds → `api/rss-proxy.js` → client-side clustering (`services/clustering.ts`) → entity extraction → signal detection
+2. Real-time data (flights, AIS vessels, protests, earthquakes, satellite fires) → geo-convergence → signal aggregator
+3. Aggregated signals → AI summarization via `api/groq-summarize.js` (Groq → OpenRouter → browser T5 fallback)
+4. Country instability scoring (`services/country-instability.ts`) → strategic risk and theater posture panels
+5. All data visualized on MapLibre + deck.gl map with 25+ toggleable layers
+
+### Dual Deployment
+- **Vercel**: Static SPA + 45+ edge functions (RSS proxy, AI pipeline, market analytics, data adapters)
+- **Railway**: WebSocket relay for AIS vessel streaming, OpenSky aircraft data (blocked from Vercel IPs), and RSS feeds from domains that block Vercel
+
+### Edge Function Conventions
+- Shared CORS handling in `api/_cors.js` — allowlist includes worldmonitor.app domains, Vercel previews, localhost, Tauri origins
+- Shared Redis cache in `api/_upstash-cache.js` — cross-user deduplication
+- Rate limiting in `api/_ip-rate-limit.js` — Redis-backed per-IP limits on AI endpoints
+- All edge functions include circuit breaker logic and return stale cached data on upstream failure
+
+### Desktop App (Tauri)
+- `src-tauri/src/main.rs`: Keyring secret storage, cache file management, sidecar spawning
+- `src-tauri/sidecar/local-api-server.mjs`: Local Node.js HTTP server (port 46123) that routes `/api/*` to edge functions
+- `src/services/runtime-config.ts`: Runtime fetch patch redirects API calls to local sidecar when `VITE_DESKTOP_RUNTIME=1`
+
+### Testing
+- **E2E**: Playwright with Chromium + SwiftShader (headless GPU). Tests use `/map-harness.html` for map layer visual regression.
+- **Unit**: Node.js native test runner for sidecar, CORS, and YouTube embed tests
+- **No lint/prettier** configured in the project
 
 ## CRITICAL: Git Branch Rules
 
 **NEVER merge or push to a different branch without explicit user permission.**
-
-- If on `beta`, only push to `beta` - never merge to `main` without asking
-- If on `main`, stay on `main` - never switch branches and push without asking
-- NEVER merge branches without explicit request
+- If on `beta`, only push to `beta` — never merge to `main` without asking
+- If on `main`, stay on `main` — never switch branches without asking
 - Pushing to the CURRENT branch after commits is OK when continuing work
 
 ## Critical: RSS Proxy Allowlist
 
-When adding new RSS feeds in `src/config/feeds.ts`, you **MUST** also add the feed domains to the allowlist in `api/rss-proxy.js`.
+When adding new RSS feeds in `src/config/feeds.ts`, you **MUST** also add the feed domain to `ALLOWED_DOMAINS` in `api/rss-proxy.js`. Feeds from unlisted domains return HTTP 403.
 
-### Why
-The RSS proxy has a security allowlist (`ALLOWED_DOMAINS`) that blocks requests to domains not explicitly listed. Feeds from unlisted domains will return HTTP 403 "Domain not allowed" errors.
+Steps: add feed to `feeds.ts` → extract domain → add to `ALLOWED_DOMAINS` in `api/rss-proxy.js` → deploy.
 
-### How to Add New Feeds
-
-1. Add the feed to `src/config/feeds.ts`
-2. Extract the domain from the feed URL (e.g., `https://www.ycombinator.com/blog/rss/` → `www.ycombinator.com`)
-3. Add the domain to `ALLOWED_DOMAINS` array in `api/rss-proxy.js`
-4. Deploy changes to Vercel
-
-### Example
-```javascript
-// In api/rss-proxy.js
-const ALLOWED_DOMAINS = [
-  // ... existing domains
-  'www.ycombinator.com',  // Add new domain here
-];
-```
-
-### Debugging Feed Issues
-If a panel shows "No news available":
-1. Open browser DevTools → Console
-2. Look for `HTTP 403` or "Domain not allowed" errors
-3. Check if the domain is in `api/rss-proxy.js` allowlist
-
-## Site Variants
-
-Two variants controlled by `VITE_VARIANT` environment variable:
-
-- `full` (default): Geopolitical focus - worldmonitor.app
-- `tech`: Tech/startup focus - startups.worldmonitor.app
-
-### Running Locally
-```bash
-npm run dev        # Full variant
-npm run dev:tech   # Tech variant
-```
-
-### Building
-```bash
-npm run build:full  # Production build for worldmonitor.app
-npm run build:tech  # Production build for startups.worldmonitor.app
-```
-
-## Custom Feed Scrapers
-
-Some sources don't provide RSS feeds. Custom scrapers are in `/api/`:
-
-| Endpoint | Source | Notes |
-|----------|--------|-------|
-| `/api/fwdstart` | FwdStart Newsletter (Beehiiv) | Scrapes archive page, 30min cache |
-
-### Adding New Scrapers
-1. Create `/api/source-name.js` edge function
-2. Scrape source, return RSS XML format
-3. Add to feeds.ts: `{ name: 'Source', url: '/api/source-name' }`
-4. No need to add to rss-proxy allowlist (direct API, not proxied)
+Custom scrapers in `api/` (e.g., `api/fwdstart.js`) don't need allowlist entries since they're direct API endpoints.
 
 ## AI Summarization & Caching
 
-The AI Insights panel uses a server-side Redis cache to deduplicate API calls across users.
+Fallback chain: Groq (14.4K req/day) → OpenRouter (50/day) → Browser T5 (unlimited, slower).
+All results cached in Redis (Upstash) with 24h TTL, keyed by headline hash for cross-user dedup.
 
-### Required Environment Variables
-
-```bash
-# Groq API (primary summarization)
-GROQ_API_KEY=gsk_xxx
-
-# OpenRouter API (fallback)
-OPENROUTER_API_KEY=sk-or-xxx
-
-# Upstash Redis (cross-user caching)
-UPSTASH_REDIS_REST_URL=https://xxx.upstash.io
-UPSTASH_REDIS_REST_TOKEN=xxx
-```
-
-### How It Works
-
-1. User visits → `/api/groq-summarize` receives headlines
-2. Server hashes headlines → checks Redis cache
-3. **Cache hit** → return immediately (no API call)
-4. **Cache miss** → call Groq API → store in Redis (24h TTL) → return
-
-### Model Selection
-
-- **llama-3.1-8b-instant**: 14,400 req/day (used for summaries)
-- **llama-3.3-70b-versatile**: 1,000 req/day (quality but limited)
-
-### Fallback Chain
-
-1. Groq (fast, 14.4K/day) → Redis cache
-2. OpenRouter (50/day) → Redis cache
-3. Browser T5 (unlimited, slower, no cache)
-
-### Setup Upstash
-
-1. Create free account at [upstash.com](https://upstash.com)
-2. Create a new Redis database
-3. Copy REST URL and Token to Vercel env vars
+Required env vars: `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
 
 ## Service Status Panel
 
-Status page URLs in `api/service-status.js` must match the actual status page endpoint. Common formats:
+Status page URLs in `api/service-status.js` must match actual endpoints:
 - Statuspage.io: `https://status.example.com/api/v2/status.json`
-- Atlassian: `https://example.status.atlassian.com/api/v2/status.json`
-- incident.io: Same endpoint but returns HTML, handled by `incidentio` parser
-
-Current known URLs:
-- Anthropic: `https://status.claude.com/api/v2/status.json`
-- Zoom: `https://www.zoomstatus.com/api/v2/status.json`
-- Notion: `https://www.notion-status.com/api/v2/status.json`
+- incident.io: Same endpoint format but returns HTML, handled by `incidentio` parser
 
 ## Allowed Bash Commands
 
-The following additional bash commands are permitted without user approval:
-- `Bash(ps aux:*)` - List running processes
-- `Bash(grep:*)` - Search text patterns
-- `Bash(ls:*)` - List directory contents
+Permitted without user approval:
+- `Bash(ps aux:*)` — List running processes
+- `Bash(grep:*)` — Search text patterns
+- `Bash(ls:*)` — List directory contents
 
 ## Bash Guidelines
 
-### IMPORTANT: Avoid commands that cause output buffering issues
-- DO NOT pipe output through `head`, `tail`, `less`, or `more` when monitoring or checking command output
-- DO NOT use `| head -n X` or `| tail -n X` to truncate output - these cause buffering problems
-- Instead, let commands complete fully, or use `--max-lines` flags if the command supports them
-- For log monitoring, prefer reading files directly rather than piping through filters
-
-### When checking command output:
+- DO NOT pipe through `head`, `tail`, `less`, or `more` — causes output buffering issues
+- Use command-specific flags instead (e.g., `git log -n 10` not `git log | head -10`)
 - Run commands directly without pipes when possible
-- If you need to limit output, use command-specific flags (e.g., `git log -n 10` instead of `git log | head -10`)
-- Avoid chained pipes that can cause output to buffer indefinitely
